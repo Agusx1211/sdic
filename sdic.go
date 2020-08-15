@@ -10,40 +10,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var rootCmd = &cobra.Command{
-	Use:   "sdic",
-	Short: "Password candidate generator that combinates words from a dictionary divided in chunks.",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		dictDir, err := cmd.Flags().GetString("dict")
-		if err != nil {
-			return err
-		}
-		separator, err := cmd.Flags().GetString("separator")
-		if err != nil {
-			return err
-		}
-
-		if separator == "" {
-			separator = "<---Chunk--->"
-		}
-
-		return sdicMain(dictDir, separator)
-	},
-}
-
-func init() {
-	rootCmd.Flags().StringP("dict", "d", "", "Dictionary file")
-	rootCmd.Flags().StringP("separator", "s", "", "Chunk separator")
-}
-
-func sdicMain(dicDir string, separator string) error {
+func loadChunks(dicDir string, separator string) ([][]string, error) {
 	// Define chunks slice
 	chunks := make([][]string, 1)
 
 	// Open dictionary file
 	file, err := os.Open(dicDir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	defer file.Close()
@@ -52,7 +26,9 @@ func sdicMain(dicDir string, separator string) error {
 	// split into chunks
 	scanner := bufio.NewScanner(file)
 	chunks = append(chunks, make([]string, 1))
+	chunks[0] = append(chunks[0], "")
 	cindex := 0
+
 	for scanner.Scan() {
 		text := scanner.Text()
 
@@ -77,6 +53,16 @@ func sdicMain(dicDir string, separator string) error {
 
 	// Close file
 	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return chunks[0 : len(chunks)-1], nil
+}
+
+func sdicMain(dicDir string, separator string) error {
+	// Get chunks
+	chunks, err := loadChunks(dicDir, separator)
+	if err != nil {
 		return err
 	}
 
@@ -112,7 +98,138 @@ func sdicMain(dicDir string, separator string) error {
 	return nil
 }
 
+func genRule(dicDir string, separator string, output string) error {
+	// Get chunks
+	chunks, err := loadChunks(dicDir, separator)
+	if err != nil {
+		return err
+	}
+
+	// Create files
+	rfile, err := os.Create(output + ".rule")
+	if err != nil {
+		return err
+	}
+	defer rfile.Close()
+
+	dfile, err := os.Create(output + ".dict")
+	if err != nil {
+		return err
+	}
+	defer dfile.Close()
+
+	// Write rule (last chunk)
+	_, err = rfile.WriteString(":")
+	if err != nil {
+		return err
+	}
+
+	for _, val := range chunks[len(chunks)-1] {
+		for _, char := range val {
+			_, err := rfile.WriteString("$" + string(char))
+			if err != nil {
+				return err
+			}
+		}
+		_, err := rfile.WriteString("\n")
+		if err != nil {
+			return err
+		}
+	}
+
+	// Write dict without last chunk
+	for i, val := range chunks[0 : len(chunks)-1] {
+		for _, entry := range val {
+			if entry != "" {
+				_, err := dfile.WriteString(entry + "\n")
+				if err != nil {
+					return err
+				}
+			}
+		}
+		if i != len(chunks)-2 {
+			_, err := dfile.WriteString(separator + "\n")
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func sizeOf(dicDir string, separator string) error {
+	// Get chunks
+	chunks, err := loadChunks(dicDir, separator)
+	if err != nil {
+		return err
+	}
+
+	total := 1
+	for _, chunk := range chunks {
+		total = total * len(chunk)
+	}
+
+	fmt.Println(total)
+	return nil
+}
+
 func main() {
+	rootCmd := &cobra.Command{
+		Use:   "sdic",
+		Short: "Password candidate generator that combinates words from a dictionary divided in chunks.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dictDir, err := cmd.Flags().GetString("dict")
+			if err != nil {
+				return err
+			}
+			separator, err := cmd.Flags().GetString("separator")
+			if err != nil {
+				return err
+			}
+
+			return sdicMain(dictDir, separator)
+		},
+	}
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "rules",
+		Short: "Generate rules for hashcat",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dictDir, err := cmd.Flags().GetString("dict")
+			if err != nil {
+				return err
+			}
+			separator, err := cmd.Flags().GetString("separator")
+			if err != nil {
+				return err
+			}
+			output, err := cmd.Flags().GetString("output")
+			if err != nil {
+				return err
+			}
+
+			return genRule(dictDir, separator, output)
+		},
+	})
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "size",
+		Short: "Compute set of possible candidates",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dictDir, err := cmd.Flags().GetString("dict")
+			if err != nil {
+				return err
+			}
+			separator, err := cmd.Flags().GetString("separator")
+			if err != nil {
+				return err
+			}
+
+			return sizeOf(dictDir, separator)
+		},
+	})
+	rootCmd.PersistentFlags().StringP("dict", "d", "", "Dictionary file")
+	rootCmd.PersistentFlags().StringP("separator", "s", "<---Chunk--->", "Chunk separator")
+	rootCmd.PersistentFlags().StringP("output", "o", "./gen_rules", "Outputs for rule generator")
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)

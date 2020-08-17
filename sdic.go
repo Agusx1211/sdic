@@ -98,9 +98,7 @@ func sdicMain(dicDir string, separator string) error {
 	return nil
 }
 
-func genRule(dicDir string, separator string, output string) error {
-	rd := 2
-
+func genRule(dicDir string, separator string, output string, rd int) error {
 	// Get chunks
 	chunks, err := loadChunks(dicDir, separator)
 	if err != nil {
@@ -168,7 +166,7 @@ func genRule(dicDir string, separator string, output string) error {
 	}
 
 	// Write dict without last chunk
-	for i, val := range chunks[0 : len(chunks)-1] {
+	for i, val := range chunks[0 : len(chunks)-rd] {
 		for _, entry := range val {
 			if entry != "" {
 				_, err := dfile.WriteString(entry + "\n")
@@ -177,7 +175,7 @@ func genRule(dicDir string, separator string, output string) error {
 				}
 			}
 		}
-		if i != len(chunks)-2 {
+		if i != len(chunks)-(rd+1) {
 			_, err := dfile.WriteString(separator + "\n")
 			if err != nil {
 				return err
@@ -237,8 +235,11 @@ func main() {
 			if err != nil {
 				return err
 			}
-
-			return genRule(dictDir, separator, output)
+			rd, err := cmd.Flags().GetInt("depth")
+			if err != nil {
+				return err
+			}
+			return genRule(dictDir, separator, output, rd)
 		},
 	})
 	rootCmd.AddCommand(&cobra.Command{
@@ -260,6 +261,7 @@ func main() {
 	rootCmd.PersistentFlags().StringP("dict", "d", "", "Dictionary file")
 	rootCmd.PersistentFlags().StringP("separator", "s", "<---Chunk--->", "Chunk separator")
 	rootCmd.PersistentFlags().StringP("output", "o", "./gen_rules", "Outputs for rule generator")
+	rootCmd.PersistentFlags().IntP("depth", "", 2, "Depth for rule generator")
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)

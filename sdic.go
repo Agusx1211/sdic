@@ -99,6 +99,8 @@ func sdicMain(dicDir string, separator string) error {
 }
 
 func genRule(dicDir string, separator string, output string) error {
+	rd := 2
+
 	// Get chunks
 	chunks, err := loadChunks(dicDir, separator)
 	if err != nil {
@@ -119,21 +121,49 @@ func genRule(dicDir string, separator string, output string) error {
 	defer dfile.Close()
 
 	// Write rule (last chunk)
-	_, err = rfile.WriteString(":")
+	_, err = rfile.WriteString(":\n")
 	if err != nil {
 		return err
 	}
 
-	for _, val := range chunks[len(chunks)-1] {
-		for _, char := range val {
-			_, err := rfile.WriteString("$" + string(char))
+	indexes := make([]int, rd)
+	ruleschunks := chunks[len(chunks)-rd:]
+	for {
+		// Generate candidate
+		var str strings.Builder
+		for i, bchunk := range ruleschunks {
+			str.WriteString(bchunk[indexes[i]])
+		}
+
+		if str.String() != "" {
+			for _, char := range str.String() {
+				_, err := rfile.WriteString("$" + string(char))
+				if err != nil {
+					return err
+				}
+			}
+			_, err := rfile.WriteString("\n")
 			if err != nil {
 				return err
 			}
 		}
-		_, err := rfile.WriteString("\n")
-		if err != nil {
-			return err
+
+		// Move indexes
+		carry := false
+		last := len(ruleschunks) - 1
+		indexes[last] = indexes[last] + 1
+		for i := last; i >= 0; i-- {
+			if carry {
+				indexes[i] = indexes[i] + 1
+				carry = false
+			}
+			if indexes[i] == len(ruleschunks[i]) {
+				indexes[i] = 0
+				carry = true
+			}
+		}
+		if carry {
+			break
 		}
 	}
 

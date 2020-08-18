@@ -98,6 +98,15 @@ func sdicMain(dicDir string, separator string) error {
 	return nil
 }
 
+func contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
+}
+
 func genRule(dicDir string, separator string, output string, rd int) error {
 	// Get chunks
 	chunks, err := loadChunks(dicDir, separator)
@@ -126,6 +135,8 @@ func genRule(dicDir string, separator string, output string, rd int) error {
 
 	indexes := make([]int, rd)
 	ruleschunks := chunks[len(chunks)-rd:]
+	allRules := make([]string, len(chunks)-rd)
+
 	for {
 		// Generate candidate
 		var str strings.Builder
@@ -133,7 +144,8 @@ func genRule(dicDir string, separator string, output string, rd int) error {
 			str.WriteString(bchunk[indexes[i]])
 		}
 
-		if str.String() != "" {
+		if str.String() != "" && !contains(allRules, str.String()) {
+			allRules = append(allRules, str.String())
 			for _, char := range str.String() {
 				_, err := rfile.WriteString("$" + string(char))
 				if err != nil {
